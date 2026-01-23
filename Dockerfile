@@ -37,6 +37,8 @@ RUN chmod -R a+rwX /usr/local/share/Bayes_HEP
 # Set PYTHONPATH so Bayes_HEP is importable everywhere
 ENV PYTHONPATH="/usr/local/lib/python3.10/site-packages:/usr/local/share"
 
+#unset PYTHIA8DATA
+ENV PYTHIA8DATA=
 
 # Optionally copy your full project to /workdir for scripts, configs, etc.
 # COPY . /workdir

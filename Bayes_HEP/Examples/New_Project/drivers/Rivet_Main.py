@@ -27,8 +27,8 @@ model = 'pythia8'           #only pythia8 (atm)
 Run_Model = True            #run design points through model and Rivet
 PT_Min = -1 
 PT_Max = -1
-nevents = 1000              # number of events for model in each run
-Rivet_Merge =True
+nevents = 1000             # number of events for model in each run
+Rivet_Merge = True
 Write_input_Rivet = True   #gets Data/Pred info from html files 
 
 ###########################################################

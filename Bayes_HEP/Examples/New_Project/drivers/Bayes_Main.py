@@ -5,12 +5,14 @@ from Bayes_HEP.Design_Points import data_pred as DataPred
 from Bayes_HEP.Emulation import emulation as Emulation
 from Bayes_HEP.Calibration import calibration as Calibration
 from Bayes_HEP.Design_Points import rivet_html_parser as RivetParser
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 
 import os
 import shutil
 import matplotlib.pyplot as plt
 import glob
 import dill
+import numpy as np
     
 ###########################################################
 ################### SCRIPT PARAMETERS #####################
@@ -21,26 +23,38 @@ main_dir = f"{work_dir}/New_Project"
 seed = 43 
 
 clear_output = True         #clear output directory
+
+clean_input =True           #remove observables with nan and zeros
+
 Coll_System = ['pp_200']   #['AuAu_200', 'PbPb_2760', 'PbPb_5020']
 
 model = 'pythia8'
-train_size = 80             #percentage of design points used for training
-validation_size = 20        #percentage of design points used for validation
+train_size = 8             #number of design points used for training
+validation_size = 2        #number of design points used for validation
 
 ######## Emulators
 Train_Surmise = True
-Load_Surmise = True
+Load_Surmise = False
 
-Train_Scikit = True
-Load_Scikit = True
+Train_Scikit = False
+Load_Scikit = False
 
-PCA = False 
+####### Preprocessing 
+scaler_type = None       # Options: 
+                                # StandardScaler : zero mean, unit variance (recommended)
+                                # RobustScaler: median/IQR (robust to outliers)  
+                                # MinMaxScaler: scale to [0,1] range
+                                # None: no scaling
+
+Scale = scaler_type is not None
+
+PCA = False                 # Principal Component Analysis - reduce dimensionality and filter noise
 
 ######## Calibration
 Run_Caibration = True 
 nwalkers = 50
 npool = 5               #Number of CPU to use for sampler
-Samples = 100           #Number of MCMC samples  
+Samples = 100          #Number of MCMC samples  
 nburn = 0.25 * Samples  #burn in samples
 percent = 0.15          # Get traces for the last percentage of samples
 Load_Calibration = True
@@ -64,14 +78,16 @@ print("Loading design points from input directory.")
 index_files = DataPred.get_design_index(main_dir)
 merged_Design_file = f"Design__Rivet__Merged.dat"
 merged_output_file = f'{main_dir}/input/Design/{merged_Design_file}'
-shutil.copy(f"{main_dir}/input/Rivet/parameter_prior_list.dat", merged_output_file)
-existing_rows = DataPred.get_existing_design_points(index_files)
 
-with open(merged_output_file, 'a') as f:
-    f.write(f"\n\n# Total Design Points Merged = {len(existing_rows)}")
-    f.write('\n' + "# Design point indices (row index): " + ' '.join(str(i) for i in range(len(existing_rows))) + '\n')   
-    f.write("\n".join(existing_rows) + "\n")
-print(f"➕ Appended {len(existing_rows)} design points to {merged_output_file}")
+if not os.path.exists(merged_output_file):
+    shutil.copy(f"{main_dir}/input/Rivet/parameter_prior_list.dat", merged_output_file)
+    existing_rows = DataPred.get_existing_design_points(index_files)
+
+    with open(merged_output_file, 'a') as f:
+        f.write(f"\n\n# Total Design Points Merged = {len(existing_rows)}")
+        f.write('\n' + "# Design point indices (row index): " + ' '.join(str(i) for i in range(len(existing_rows))) + '\n')   
+        f.write("\n".join(existing_rows) + "\n")
+    print(f"➕ Appended {len(existing_rows)} design points to {merged_output_file}")
 print(f"Loading {merged_Design_file} from input directory.") 
 
 RawDesign = Reader.ReadDesign(f'{main_dir}/input/Design/{merged_Design_file}')
@@ -100,31 +116,57 @@ for system in Coll_System:
     System, Energy = system.split('_')[0], system.split('_')[1]  
     sys = System + Energy   
 
-    prediction_files = glob.glob(os.path.join(merged_dir, f"Prediction__{model}__{Energy}__{System}__*__values.dat"))
-    data_files = glob.glob(os.path.join(data_dir, f"Data__{Energy}__{System}__*.dat"))
+    prediction_files = sorted(glob.glob(os.path.join(merged_dir, f"Prediction__{model}__{Energy}__{System}__*__values.dat")))
+    data_files = sorted(glob.glob(os.path.join(data_dir, f"Data__{Energy}__{System}__*.dat")))
 
-    all_predictions = [Reader.ReadPrediction(f) for f in prediction_files]
+    all_predictions  = [Reader.ReadPrediction(f) for f in prediction_files]
     all_data[sys] = [Reader.ReadData(f) for f in data_files]
+
+    if clean_input: DataPred.zeros_nan_remover(main_dir, all_predictions) 
 
     n_hist[sys] = len(prediction_files)
 
     x, x_errors, y_data_results, y_data_errors = DataPred.get_data(all_data[sys], sys)
     y_train_results, y_train_errors, y_val_results, y_val_errors = DataPred.get_predictions(all_predictions, train_indices, validation_indices, sys)
+
 print("Data and predictions loaded successfully.")
 
 ######### Emulators ########
 Emulators = {}
 PredictionVal = {}
 PredictionTrain = {}
+scalers = {} if Scale else None
 os.makedirs(output_dir + "/emulator", exist_ok=True)
 
+if Scale:
+    print("Scaling training and validation data.")
+
+    for system in x.keys():  
+
+        scaler = scaler_type()
+        
+        # Fit on experimental data
+        scaler.fit(y_data_results[system].reshape(-1, 1))
+        
+        # Transform training data
+        y_train_results_scaled = np.zeros_like(y_train_results[system])
+        for i in range(y_train_results[system].shape[0]):  
+            y_train_results_scaled[i, :] = scaler.transform(y_train_results[system][i, :].reshape(-1, 1)).flatten()
+        y_train_results[system] = y_train_results_scaled
+        
+        # Transform validation data
+        y_val_results_scaled = np.zeros_like(y_val_results[system])
+        for i in range(y_val_results[system].shape[0]):  
+            y_val_results_scaled[i, :] = scaler.transform(y_val_results[system][i, :].reshape(-1, 1)).flatten()
+        y_val_results[system] = y_val_results_scaled
+        
+        # Store scaler
+        scalers[system] = scaler
+        
 ######### Surmise Emulator ########
 if Train_Surmise:
     print("Training Surmise emulators.")
-    method_type = 'indGP'
-    if PCA:
-        method_type = 'PCGP'
-
+    method_type = 'PCGP' if PCA else 'indGP'
     Emulators['surmise'], PredictionVal['surmise_val'], PredictionTrain['surmise_train'] = Emulation.train_surmise(Emulators, x, y_train_results, train_points, validation_points, output_dir, method_type)
 elif Load_Surmise:
     print("Loading Surmise emulator.")
@@ -141,13 +183,13 @@ if Train_Scikit:
     Emulators['scikit'], PredictionVal['scikit_val'], PredictionTrain['scikit_train'] = Emulation.train_scikit(Emulators, x, y_train_results, train_points, validation_points, output_dir, method_type)
 elif Load_Scikit:
     print("Loading Scikit-learn emulator.")
-
     Emulators['scikit'] = {}
     Emulators['scikit'], PredictionVal['scikit_val'], PredictionTrain['scikit_train'] = Emulation.load_scikit(Emulators['scikit'], x, train_points, validation_points, output_dir)
 
 os.makedirs(f"{output_dir}/plots/emulators/", exist_ok=True)
 
-Plots.plot_rmse_comparison(y_train_results, y_val_results, PredictionTrain, PredictionVal, output_dir)
+if Train_Surmise or Load_Surmise or Train_Scikit or Load_Scikit:
+    Plots.plot_rmse_comparison(y_train_results, y_val_results, PredictionTrain, PredictionVal, output_dir)
     
 ########### Calibration ###########
 if Run_Caibration:
@@ -157,7 +199,7 @@ if Run_Caibration:
     os.makedirs(f"{output_dir}/plots/calibration/", exist_ok=True)  
     os.makedirs(f"{output_dir}/plots/trace/", exist_ok=True)
 
-    results, samples_results, min_samples, map_params = Calibration.run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_dir, nburn, nwalkers, npool, Samples)
+    results, samples_results, min_samples, map_params = Calibration.run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_dir, nburn, nwalkers, npool, Samples, scalers)
     
     Calibration.get_traces(output_dir, x, samples_results, Emulators, parameter_names, percent) 
 
@@ -166,14 +208,13 @@ if Load_Calibration:
     samples_results, min_samples, map_params= Calibration.load_samples(output_dir, x, Emulators)
 
 ########### Results ###########
-
 if Result_plots:
     print("Generating results plots.")
-    
+
     if min_samples < size:
         print(f"Warning: Minimum samples ({min_samples}) is less than requested size ({size}). Adjusting size to {min_samples}.")
         size = min_samples
 
-    Plots.results(size, x, all_data, samples_results, y_data_results, y_data_errors, Emulators, n_hist, output_dir)
+    Plots.results(size, x, all_data, samples_results, y_data_results, y_data_errors, Emulators, n_hist, output_dir, scalers)
     
 print("done")

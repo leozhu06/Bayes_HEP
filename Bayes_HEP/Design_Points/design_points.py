@@ -80,8 +80,8 @@ def load_data(train_size, validation_size, design_points, priors, seed):
 
     else:
         scaled_samples = np.array(design_points)
-        train_size = int(len(scaled_samples) * (train_size * 0.01)) 
-        validation_size = int(len(scaled_samples) * (validation_size * 0.01)) 
+        #train_size = int(len(scaled_samples) * (train_size * 0.01)) 
+        #validation_size = int(len(scaled_samples) * (validation_size * 0.01)) 
 
     #Using DETMX
     _, initidx, inidx = detmax(scaled_samples, train_size)

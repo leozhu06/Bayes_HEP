@@ -8,7 +8,7 @@ from Bayes_HEP.Design_Points import plots as Plots
 
 
 
-def run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_dir, nburn, nwalkers=10, npool=5, Samples=1000):
+def run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_dir, nburn, nwalkers=10, npool=5, Samples=1000, scalers=None):
     class GaussianLikelihood(bilby.Likelihood):
         def __init__(self, x, y, sigma, emulator, em_type):
             self.x = x
@@ -77,7 +77,16 @@ def run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_
         for em_type in Emulators:
             Results={}
             emulator = Emulators[em_type][system]
-            likelihood = GaussianLikelihood(x[system], y_data_results[system], y_data_errors[system], emulator, em_type)
+
+            if scalers is not None:
+                y_data_scaled = scalers[system].transform(y_data_results[system].reshape(-1, 1)).flatten()
+                sigma_scaled = y_data_errors[system] / scalers[system].scale_
+            else:
+                y_data_scaled = y_data_results[system]
+                sigma_scaled = y_data_errors[system]
+
+
+            likelihood = GaussianLikelihood(x[system], y_data_scaled, sigma_scaled, emulator, em_type)
             
             pos0 = None
 

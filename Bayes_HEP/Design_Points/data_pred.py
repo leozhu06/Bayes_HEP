@@ -1,3 +1,4 @@
+from Bayes_HEP.Design_Points import reader as Reader
 import numpy as np
 import os
 import glob
@@ -113,3 +114,84 @@ def group_histograms_by_design(DG_predictions_files, merged_dir):
             f.write("# " + " ".join(f"design_point{i+1}" for i in range(merged.shape[1])) + "\n")
             np.savetxt(f, merged, fmt="%.6e")
 
+### Corey ####
+def zeros_nan_remover(main_dir, all_predictions):
+    
+    prediction_dir = f"{main_dir}/input/Prediction_Merged"
+    data_dir = f"{main_dir}/input/Data"
+
+    removal_report_list = []
+
+    prediction_files = os.listdir(prediction_dir)
+    prediction_files.sort()
+    prediction_files_path = [f'{prediction_dir}/{prediction_files}' for prediction_files in prediction_files]
+
+    data_files = os.listdir(data_dir)
+    data_files.sort()
+    data_files_path = [f'{data_dir}/{data_files}' for data_files in data_files]
+
+    all_predictions = [Reader.ReadPrediction(f) for f in prediction_files_path]
+
+    #loop over all files, designpoints, and data points to see how many unfilled points and put it into line_delete list
+    for file_number in range(len(all_predictions)):
+        missing = 0
+        design_point_number = 0
+        line_delete = []
+
+        for design_point in all_predictions[file_number]['Prediction']:
+            design_point_number += 1
+            data_point_number = 0 
+
+            for data_point in design_point:
+                data_point_number += 1
+
+                if data_point == 0:
+                    missing +=1
+                    line_delete.append(data_point_number)
+
+                if np.isnan(data_point):
+                    missing +=1
+                    line_delete.append(data_point_number)
+
+        unique_line_delete = list(set(line_delete))
+        unique_line_delete.sort()
+
+        #create list of lines from file pre-removal
+        with open(prediction_files_path[file_number], 'r') as f:
+            file_list = []
+            for line in f:
+                file_list.append(line)
+
+        #remove rows based on the line_delete list
+        for x in unique_line_delete:
+            file_list.pop(x-(data_point_number+1))
+
+        #rewrite prediction file without the rows with zeros and nan
+        with open(prediction_files_path[file_number], 'w') as f:
+            f.writelines(file_list)
+        
+        split_path = prediction_files[file_number].split('__')
+
+        if split_path[-1].split('.')[0] == 'values':
+
+            print(f'{split_path[4]} {split_path[5]}     ROWS REMOVED: {len(unique_line_delete)}     TOTAL UNFILLED VALUES: {missing}')
+            print(f'INDEX OF DATA POINTS REMOVED: {unique_line_delete}')
+            print('----------------------------------------------------------------------------------')
+        
+            removal_report_list.append(f'{split_path[4]} {split_path[5]}     ROWS REMOVED: {len(unique_line_delete)}     TOTAL UNFILLED VALUES: {missing}\n')
+            removal_report_list.append(f'INDEX OF DATA POINTS REMOVED: {unique_line_delete}\n\n')
+
+            #remove lines from the data files
+            
+            with open(data_files_path[int((file_number-1)/2)], 'r') as f:
+                file_list = []
+                for line in f:
+                    file_list.append(line)
+            for x in unique_line_delete:
+                file_list.pop(x-(data_point_number+1))
+            with open(data_files_path[int((file_number-1)/2)], 'w') as f:
+                f.writelines(file_list)
+
+    #create removal report file 
+    with open('removal_report.txt', 'w') as f:
+        f.writelines(removal_report_list)

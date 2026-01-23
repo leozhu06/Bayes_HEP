@@ -46,9 +46,9 @@ def plot_design_points(train_points, validation_points, priors):
                 ax.set_ylabel(param_names[i], fontsize=14)
 
     # Set a global legend
-    fig.legend(handles, labels, fontsize=12, loc='upper right', bbox_to_anchor=(1.15, 1))
+    fig.legend(handles, labels, fontsize=20, loc='upper right', bbox_to_anchor=(.95, .95))
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
     plt.subplots_adjust(hspace=0.4, wspace=0.4)  # Adjust spacing
 
 
@@ -123,7 +123,7 @@ def plot_trace(samples, parameter_names, title):
     plt.tight_layout(rect=[0, 0, 1, 0.97])
 
 
-def results(size, x, all_data, samples_results, y_data_results, y_data_errors, Emulators, n_hist, output_dir):
+def results(size, x, all_data, samples_results, y_data_results, y_data_errors, Emulators, n_hist, output_dir, scalers=None):
     
     for i, system in enumerate(x.keys()):
 
@@ -135,6 +135,9 @@ def results(size, x, all_data, samples_results, y_data_results, y_data_errors, E
             #Make predictions using the emulator
             if em_type == 'surmise':
                 sur_post = Emulators[em_type][system].predict(x[system], samples).mean()
+
+                if scalers is not None:
+                    sur_post = scalers[system].inverse_transform(sur_post)
 
             elif em_type == 'scikit':
                 combined_result=[]
@@ -149,7 +152,6 @@ def results(size, x, all_data, samples_results, y_data_results, y_data_errors, E
                 sk_post = post.reshape(samples.shape[0], x[system].shape[0]).T  
 
         for j in range(n_hist[system]):
-            
             num_systems = len(x.keys())
             fig, ax = plt.subplots(figsize=(10, 8))
 
@@ -160,9 +162,10 @@ def results(size, x, all_data, samples_results, y_data_results, y_data_errors, E
             x_param = x[system][x[system][:, 0] == j]
             x_val = x_param[:, 1]
 
-            nbins = len(x_param)   # number of bins per histogram
-            start = j * nbins
-            end   = start + nbins
+            start = sum(len(x[system][x[system][:, 0] == k]) for k in range(j))
+            nbins = len(x_param)
+            end = start + nbins
+
         
             for em_type in Emulators:
 
@@ -216,3 +219,4 @@ def results(size, x, all_data, samples_results, y_data_results, y_data_errors, E
             fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(1.01, 1), fontsize=16)
             plt.tight_layout(rect=[0, 0, 0.85, 1])
             plt.savefig(f"{output_dir}/plots/results/{inspire}/{histogram}", bbox_inches='tight')
+            plt.close(fig)
