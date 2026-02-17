@@ -24,8 +24,9 @@ def run_calibration(x, y_data_results, y_data_errors, priors, Emulators, output_
             params = np.array([self.parameters[key] for key in self.parameters])
             try:
                 if self.em_type =='surmise':
-                    model = np.squeeze(self.emulator.predict(self.x, params).mean().T)
-                    var = np.squeeze(self.emulator.predict(self.x, params).var().T)
+                    prediction = self.emulator.predict(self.x, params)
+                    model = np.squeeze(prediction.mean().T)
+                    var = np.squeeze(prediction.var().T)
                     error = np.sqrt(var)
                 elif self.em_type == 'scikit': 
                     combined_result=[]
